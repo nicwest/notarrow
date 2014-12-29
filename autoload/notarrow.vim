@@ -1,55 +1,6 @@
 let s:buffer_name = '{notarrow}'
 let s:buffer_nr = bufexists(s:buffer_name) ? bufnr(s:buffer_name) : -1
 
-function! s:all() abort
-  return filter(range(1, bufnr('$')), 'bufexists(v:val)')
-endfunction
-
-function! s:unlisted() abort
-  return filter(s:all(), '!buflisted(v:val)')
-endfunction
-
-function! s:listed() abort
-  return filter(s:all(), 'buflisted(v:val)')
-endfunction
-
-function! s:loaded() abort
-  return filter(s:all(), 'bufloaded(v:val)')
-endfunction
-
-function! s:hidden() abort
-  return filter(s:all(), '!bufloaded(v:val)')
-endfunction 
-
-function! s:modified() abort
-  return filter(s:listed(), 'getbufvar(v:val, "&mod")')
-endfunction
-
-function! s:relevant() abort
-  return filter(s:listed(), '!getbufvar(v:val, "notarrow_relevant", 0)')
-endfunction
-
-function! s:relevant() abort
-  return filter(s:listed(), 'getbufvar(v:val, "notarrow_relevant", 0)')
-endfunction
-
-function! s:buffer_names(buffers) abort
-  return map(a:buffers, 'bufname(v:val) != "" ? bufname(v:val) : "[No Name]"')
-endfunction
-
-function! s:mark_relevant(buffer) abort
-  call setbufvar(a:buffer, 'b:notarrow_relevant', 1) 
-endfunction
-
-function! s:clear_relevant() abort
-  for l:buffer in s:all()
-    try
-      call setbufvar(l:buffer, 'b:notarrow_relevant', 0) 
-    catch
-      continue
-    endtry
-  endfor
-endfunction
 
 function! notarrow#exists() abort
   return bufnr(s:buffer_name) > -1
@@ -60,15 +11,17 @@ function! notarrow#is_open() abort
 endfunction
 
 function! notarrow#debug() abort
-  echom string(s:all())
-  echom string(s:listed())
-  echom string(s:relevant())
+  echom string(notarrow#buffers#all())
+  echom string(notarrow#buffers#listed())
+  echom string(notarrow#buffers#relevant())
   echom s:buffer_nr
   echom notarrow#exists()
   echom notarrow#is_open()
 endfunction
 
+
 function! notarrow#open_buffer_window() abort
+  " Function: creates, opens or focuses buffer with s:buffer_name
   if !notarrow#exists()
     exe 'keepa bel 10new ' . s:buffer_name 
     let s:buffer_nr = bufnr('%')
@@ -80,7 +33,8 @@ function! notarrow#open_buffer_window() abort
   endif
 endfunction
 
-function! notarrow#buffer_settings() abort
+function! notarrow#setup() abort
+  " Function: sets up the buffer the way we like it
   if bufnr('%') != s:buffer_nr
     throw 'trying to setup wrong buffer!'
   endif
@@ -95,54 +49,63 @@ function! notarrow#buffer_settings() abort
 endfunction
 
 function! notarrow#autocmds() abort
-  exe 'au! * <buffer=' . s:buffer_nr .'>'
+  " Function: sets up autocmds
+  exe 'autocmd! * <buffer=' . s:buffer_nr .'>'
   exe 'autocmd Bufleave <buffer=' . s:buffer_nr . '> :' . s:buffer_nr . 'winc q'
 endfunction
 
-function! notarrow#keybinds(c) abort
-  "where a:c is the buffer where the plugin was invoked from
-  exe 'nnoremap <silent> <buffer> <c-h> :call notarrow#toggle_mode(' . a:c . ')<CR>'
-  exe 'nnoremap <silent> <buffer> <CR> :call notarrow#open_buffer(' . a:c . ')<CR>'
+function! notarrow#keybinds(b) abort
+  " Where: a:b is the buffer where the plugin was invoked from
+  exe 'nnoremap <silent> <buffer> <c-h> :call notarrow#toggle_mode(' . a:b . ')<CR>'
+  exe 'nnoremap <silent> <buffer> <CR> :call notarrow#open_buffer(' . a:b . ')<CR>'
 endfunction
 
-function! notarrow#toggle_mode(c) abort
+function! notarrow#toggle_mode(b) abort
+  " Where: a:b is the buffer where the plugin was invoked from
   let b:mode = b:mode == '*' ? '' : '*' 
-  call notarrow#populate(a:c)
+  call notarrow#populate(a:b)
 endfunction
 
-function! notarrow#open_buffer(c) abort
-  "where a:c is the buffer where the plugin was invoked from
+function! notarrow#open_buffer(b) abort
+  " Where: a:b is the buffer where the plugin was invoked from
   if len(b:buffers) < 1
     return
   endif
   let l:target_buffer = b:buffers[line('.')-1]
-  exe bufwinnr(a:c) . 'winc w'
+  exe bufwinnr(a:b) . 'winc w'
   exe 'buf' l:target_buffer
 endfunction
 
-function! notarrow#setup() abort
-  let l:current = bufnr('%')
+function! notarrow#main() abort
+  " Function: main call
+  let l:current_buffer = bufnr('%')
+  let l:current_window = winnr('%')
   call notarrow#open_buffer_window()
-  call notarrow#buffer_settings() 
-  call notarrow#populate(l:current)
+  call notarrow#setup() 
+  call notarrow#populate(l:current_buffer, l:current_window)
   call notarrow#autocmds()
-  call notarrow#keybinds(l:current)
+  call notarrow#keybinds(l:current_buffer, l:current_window)
 endfunction
 
-function! notarrow#new_buffer() abort
-  let l:buffer = s:all()[-1] 
+function! notarrow#buffer_add() abort
+  " Function: marks new buffer as relevant, and adds it to order
+  let l:buffer = notarrow#buffers#all()[-1] 
   if buflisted(l:buffer)
     call setbufvar(l:buffer, 'notarrow_relevant', 1)
   endif
 endfunction
 
+function! notarrow#buffer_window_enter() abort
+  echom winnr()
+endfunction
 
-function! notarrow#format_buffer_path(b, c) abort
-  "where a:b is the buffer number and a:c is the buffer that the plugin was
-  "invoked from
+
+function! notarrow#format_buffer_path(b, cb) abort
+  " Where: a:b is the buffer number and a:cb is the buffer that the plugin was
+  " invoked from
   let l:formatted_path = '  ' . a:b
   let l:buffer_path = bufname(a:b)
-  let l:current = a:b == a:c
+  let l:current = a:b == a:cb
   let l:alternate = bufexists('#') && bufnr('#') == a:b
   let l:relevant = getbufvar(a:b, 'notarrow_relevant', 0)
   let l:modified = getbufvar(a:b, '&modified', 0)
@@ -164,22 +127,22 @@ function! notarrow#format_buffer_path(b, c) abort
   return l:formatted_path
 endfunction
 
-function! notarrow#populate(c) abort
-  "where a:c is the buffer where the plugin was invoked from
+function! notarrow#populate(b) abort
+  " Where: a:b is the buffer where the plugin was invoked from
   if bufnr('%') != s:buffer_nr
     throw 'trying to populate wrong buffer!'
   endif
   set ma
   norm! gg"_dG
   if b:mode == '*'
-    let b:buffers = s:relevant()
+    let b:buffers = notarrow#buffers#relevant()
   else
-    let b:buffers = s:listed()
+    let b:buffers = notarrow#buffers#listed()
   endif
   if len(b:buffers) < 10
     exe 'res' max([1, len(b:buffers)])
   endif
-  let l:buffer_paths = map(copy(b:buffers), 'notarrow#format_buffer_path(v:val, a:c)')
+  let l:buffer_paths = map(copy(b:buffers), 'notarrow#format_buffer_path(v:val, a:b)')
   call append(0, l:buffer_paths)
   norm! G"_dd
   exe 'norm! G' . (index(b:buffers, a:c) - 1)

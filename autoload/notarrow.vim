@@ -1,5 +1,7 @@
 let s:buffer_name = '{notarrow}'
 let s:buffer_nr = bufexists(s:buffer_name) ? bufnr(s:buffer_name) : -1
+let s:preview = 0
+let s:mode = '*'
 
 
 function! notarrow#exists() abort
@@ -15,6 +17,8 @@ function! notarrow#debug() abort
   echom string(notarrow#buffers#listed())
   echom string(notarrow#buffers#relevant())
   echom s:buffer_nr
+  echom s:mode
+  echom s:preview
   echom notarrow#exists()
   echom notarrow#is_open()
 endfunction
@@ -25,7 +29,7 @@ function! notarrow#open_buffer_window() abort
   if !notarrow#exists()
     exe 'keepa bel 10new ' . s:buffer_name 
     let s:buffer_nr = bufnr('%')
-    let b:mode = 's'
+    let s:mode = 's'
   elseif !notarrow#is_open()
     exe 'keepa bel 10sb ' . s:buffer_nr
   elseif notarrow#is_open()
@@ -51,19 +55,38 @@ endfunction
 function! notarrow#autocmds() abort
   " Function: sets up autocmds
   exe 'autocmd! * <buffer=' . s:buffer_nr .'>'
-  exe 'autocmd Bufleave <buffer=' . s:buffer_nr . '> :' . s:buffer_nr . 'winc q'
+  exe 'autocmd Bufleave <buffer=' . s:buffer_nr . '> call notarrow#close()'
 endfunction
 
-function! notarrow#keybinds(b) abort
-  " Where: a:b is the buffer where the plugin was invoked from
-  exe 'nnoremap <silent> <buffer> <c-h> :call notarrow#toggle_mode(' . a:b . ')<CR>'
-  exe 'nnoremap <silent> <buffer> <CR> :call notarrow#open_buffer(' . a:b . ')<CR>'
+function! notarrow#close()
+  if !s:preview
+    exe s:buffer_nr . 'winc q'
+  else
+    let s:preview = 0
+  endif
 endfunction
 
-function! notarrow#toggle_mode(b) abort
+function! notarrow#keybinds(b, w) abort
+  " Where: a:b is the buffer where the plugin was invoked from, and a:w 
+  " is the window where the plugin was invoked from
+  exe 'nnoremap <silent> <buffer> <nowait> <c-h> :call notarrow#toggle_mode(' . a:b . ', ' . a:w . ')<CR>'
+  exe 'nnoremap <silent> <buffer> <nowait> <space> :call notarrow#toggle_relevant(' . a:b . ', ' . a:w .')<CR>'
+  exe 'nnoremap <silent> <buffer> <nowait> <CR> :call notarrow#open_buffer(' . a:b . ')<CR>'
+  exe 'nnoremap <silent> <buffer> <nowait> q :norm! ZQ<CR>'
+endfunction
+
+function! notarrow#toggle_mode(b, w) abort
   " Where: a:b is the buffer where the plugin was invoked from
-  let b:mode = b:mode == '*' ? '' : '*' 
-  call notarrow#populate(a:b)
+  let s:mode = s:mode == '*' ? '' : '*' 
+  echo 'notarrow mode: ' . s:mode
+  call notarrow#populate(a:b, a:w)
+endfunction
+
+function! notarrow#toggle_relevant(b, w) abort
+  " Where: a:b is the buffer where the plugin was invoked from
+  let l:relevant = getbufvar(a:b, 'notarrow_relevant', 0) ? 0 : 1
+  call setbufvar(a:b, 'notarrow_relevant', l:relevant)
+  call notarrow#populate(a:b, a:w)
 endfunction
 
 function! notarrow#open_buffer(b) abort
@@ -72,14 +95,14 @@ function! notarrow#open_buffer(b) abort
     return
   endif
   let l:target_buffer = b:buffers[line('.')-1]
-  exe bufwinnr(a:b) . 'winc w'
-  exe 'buf' l:target_buffer
+  sil exe bufwinnr(a:b) . 'winc w'
+  sil exe 'buf' l:target_buffer
 endfunction
 
 function! notarrow#main() abort
   " Function: main call
   let l:current_buffer = bufnr('%')
-  let l:current_window = winnr('%')
+  let l:current_window = winnr()
   call notarrow#open_buffer_window()
   call notarrow#setup() 
   call notarrow#populate(l:current_buffer, l:current_window)
@@ -87,16 +110,41 @@ function! notarrow#main() abort
   call notarrow#keybinds(l:current_buffer, l:current_window)
 endfunction
 
-function! notarrow#buffer_add() abort
-  " Function: marks new buffer as relevant, and adds it to order
-  let l:buffer = notarrow#buffers#all()[-1] 
-  if buflisted(l:buffer)
-    call setbufvar(l:buffer, 'notarrow_relevant', 1)
+function! notarrow#next() abort
+  " Function: main call
+  let l:current_buffer = bufnr('%')
+  let l:current_window = winnr()
+  if l:current_buffer == s:buffer_nr 
+    return
+  endif
+  let s:preview = 1
+  if s:mode == '*'
+    let l:order = notarrow#order#relevant(l:current_buffer, l:current_window)
+  else
+    let l:order = notarrow#order#listed(l:current_buffer, l:current_window)
+  endif
+  echom string(l:order)
+  call notarrow#main()
+  if len(l:order) > 1
+    let l:buffer = l:order[1]
+    sil exe l:current_window . 'winc w'
+    sil exe 'buf' l:buffer
+  else
+    let s:preview = 0
   endif
 endfunction
 
 function! notarrow#buffer_window_enter() abort
-  echom winnr()
+  let l:window = winnr()
+  let l:buffer = winbufnr(l:window)
+  if buflisted(l:buffer)
+    call setbufvar(l:buffer, 'notarrow_relevant', 1)
+    if !s:preview
+      call notarrow#order#add(l:buffer, l:window)
+    else
+      call notarrow#order#rotate(l:buffer, l:window)
+    endif
+  endif
 endfunction
 
 
@@ -127,17 +175,18 @@ function! notarrow#format_buffer_path(b, cb) abort
   return l:formatted_path
 endfunction
 
-function! notarrow#populate(b) abort
-  " Where: a:b is the buffer where the plugin was invoked from
+function! notarrow#populate(b, w) abort
+  " Where: a:b is the buffer where the plugin was invoked from, and a:w 
+  " is the window where the plugin was invoked from
   if bufnr('%') != s:buffer_nr
     throw 'trying to populate wrong buffer!'
   endif
   set ma
   norm! gg"_dG
-  if b:mode == '*'
-    let b:buffers = notarrow#buffers#relevant()
+  if s:mode == '*'
+    let b:buffers = notarrow#order#relevant(a:b, a:w)
   else
-    let b:buffers = notarrow#buffers#listed()
+    let b:buffers = notarrow#order#listed(a:b, a:w)
   endif
   if len(b:buffers) < 10
     exe 'res' max([1, len(b:buffers)])
@@ -145,6 +194,6 @@ function! notarrow#populate(b) abort
   let l:buffer_paths = map(copy(b:buffers), 'notarrow#format_buffer_path(v:val, a:b)')
   call append(0, l:buffer_paths)
   norm! G"_dd
-  exe 'norm! G' . (index(b:buffers, a:c) - 1)
+  exe 'norm! G' . (index(b:buffers, a:b) - 1)
   set noma
 endfunction

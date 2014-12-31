@@ -26,7 +26,7 @@ function! notarrow#buffers#relevant() abort
   return filter(notarrow#buffers#listed(), '!getbufvar(v:val, "notarrow_relevant", 0)')
 endfunction
 
-function! notarrow#buffers#relevant() abort
+function! notarrow#buffers#notrelevant() abort
   return filter(notarrow#buffers#listed(), 'getbufvar(v:val, "notarrow_relevant", 0)')
 endfunction
 
@@ -61,5 +61,5 @@ function! notarrow#buffers#exclude(b, f) abort
   " to filter by.
   " Returns: a list of buffer numbers containing only numbers
   " from a:b that are not in a:f 
-  return filter(copy(a:b), 'index(a:f, v:val) > -1')
+  return filter(copy(a:b), 'index(a:f, v:val) < 0')
 endfunction

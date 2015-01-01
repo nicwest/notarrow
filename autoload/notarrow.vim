@@ -53,22 +53,32 @@ function! notarrow#setup() abort
 endfunction
 
 function! notarrow#autocmds() abort
+  " Where: a:b is the current buffer
   " Function: sets up autocmds
-  exe 'autocmd! * <buffer=' . s:buffer_nr .'>'
-  exe 'autocmd Bufleave <buffer=' . s:buffer_nr . '> call notarrow#close()'
+  if bufnr('%') != s:buffer_nr
+    throw 'trying to populate wrong buffer!'
+  endif
+  augroup notarrow_window
+    autocmd!
+    exe 'autocmd! <buffer=' . s:buffer_nr .'>'
+    exe 'autocmd Bufleave <buffer=' . s:buffer_nr . '> call notarrow#close()'
+  augroup END
 endfunction
 
 function! notarrow#close()
   if !s:preview
     exe s:buffer_nr . 'winc q'
-  else
-    let s:preview = 0
+  "else
+    "let s:preview = 0
   endif
 endfunction
 
 function! notarrow#keybinds(b, w) abort
   " Where: a:b is the buffer where the plugin was invoked from, and a:w 
   " is the window where the plugin was invoked from
+  if bufnr('%') != s:buffer_nr
+    throw 'trying to populate wrong buffer!'
+  endif
   exe 'nnoremap <silent> <buffer> <nowait> <c-h> :call notarrow#toggle_mode(' . a:b . ', ' . a:w . ')<CR>'
   exe 'nnoremap <silent> <buffer> <nowait> <space> :call notarrow#toggle_relevant(' . a:b . ', ' . a:w .')<CR>'
   exe 'nnoremap <silent> <buffer> <nowait> <CR> :call notarrow#open_buffer(' . a:b . ')<CR>'
@@ -124,14 +134,20 @@ function! notarrow#next() abort
     let l:order = notarrow#order#listed(l:current_buffer, l:current_window)
   endif
   echom string(l:order)
-  call notarrow#main()
   if len(l:order) > 1
     let l:buffer = l:order[1]
+    call notarrow#open_buffer_window()
+    call notarrow#setup() 
+    call notarrow#populate(l:buffer, l:current_window)
+    call notarrow#autocmds()
+    augroup notarrow_buffer
+      exe 'autocmd CursorMoved,InsertEnter,TextChanged,CursorHold <buffer=' . l:buffer . '> call notarrow#close()'
+    augroup END
+    call notarrow#keybinds(l:buffer, l:current_window)
     sil exe l:current_window . 'winc w'
     sil exe 'buf' l:buffer
-  else
-    let s:preview = 0
   endif
+  let s:preview = 0
 endfunction
 
 function! notarrow#buffer_window_enter() abort

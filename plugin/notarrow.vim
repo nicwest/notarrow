@@ -5,4 +5,7 @@ command! NotArrowNext :call notarrow#next()
 nnoremap <silent> <c-b> :NotArrow<CR>
 nnoremap <silent> <c-f> :NotArrowNext<CR>
 
-autocmd BufWinenter * call notarrow#buffer_window_enter()
+augroup notarrow_init
+  autocmd!
+  autocmd BufWinenter * call notarrow#buffer_window_enter()
+augroup END

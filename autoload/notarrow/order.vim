@@ -1,13 +1,5 @@
 let s:buffer_order = []
 
-function! notarrow#order#window_init(b, w)
-  " Where: a:b is a buffer number and a:w is a window number
-  let l:window_order = getwinvar(a:w, 'notarrow_order', [])
-  if len(l:window_order) < 1
-    call setwinvar(a:w, 'notarrow_order', [a:b])
-  endif
-endfunction
-
 function! notarrow#order#combined(w)
   " Where: a:w is a window number
   " Returns: a list containing the order of buffers from both window order and
@@ -21,6 +13,8 @@ endfunction
 
 function! notarrow#order#remove(b, w) abort
   " Where: a:b is a buffer number and a:w is a window number
+  "echo s:buffer_order
+  "echo getwinvar(a:w, 'notarrow_order', [])
   call filter(s:buffer_order, 'v:val != a:b')
   let l:window_order = getwinvar(a:w, 'notarrow_order', [])
   call filter(l:window_order, 'v:val != a:b')

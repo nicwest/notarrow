@@ -1,7 +1,7 @@
 let s:buffer_name = '{notarrow}'
 let s:buffer_nr = bufexists(s:buffer_name) ? bufnr(s:buffer_name) : -1
 let s:preview = 0
-let s:mode = '*'
+let s:mode = ''
 
 
 function! notarrow#exists() abort
@@ -26,7 +26,7 @@ endfunction
 
 function! notarrow#open_buffer_window() abort
   " Function: creates, opens or focuses buffer with s:buffer_name
-  if !notarrow#exists()
+  if !bufexists(s:buffer_name)
     exe 'keepa bel 10new ' . s:buffer_name 
     let s:buffer_nr = bufnr('%')
     let s:mode = 's'
@@ -56,20 +56,20 @@ function! notarrow#autocmds() abort
   " Where: a:b is the current buffer
   " Function: sets up autocmds
   if bufnr('%') != s:buffer_nr
-    throw 'trying to populate wrong buffer!'
+    throw 'trying to autocmd wrong buffer!'
   endif
   augroup notarrow_window
     autocmd!
-    exe 'autocmd! <buffer=' . s:buffer_nr .'>'
+    exe 'autocmd! * <buffer=' . s:buffer_nr .'>'
     exe 'autocmd Bufleave <buffer=' . s:buffer_nr . '> call notarrow#close()'
   augroup END
 endfunction
 
 function! notarrow#close()
-  if !s:preview
+  if !s:preview && bufnr('%') == s:buffer_nr
     exe s:buffer_nr . 'winc q'
-  "else
-    "let s:preview = 0
+  else
+    let s:preview = 0
   endif
 endfunction
 
@@ -94,8 +94,9 @@ endfunction
 
 function! notarrow#toggle_relevant(b, w) abort
   " Where: a:b is the buffer where the plugin was invoked from
-  let l:relevant = getbufvar(a:b, 'notarrow_relevant', 0) ? 0 : 1
-  call setbufvar(a:b, 'notarrow_relevant', l:relevant)
+  let l:target_buffer = b:buffers[line('.')-1]
+  let l:relevant = getbufvar(l:target_buffer, 'notarrow_relevant', 0) ? 0 : 1
+  call setbufvar(l:target_buffer, 'notarrow_relevant', l:relevant)
   call notarrow#populate(a:b, a:w)
 endfunction
 
@@ -125,6 +126,8 @@ function! notarrow#next() abort
   let l:current_buffer = bufnr('%')
   let l:current_window = winnr()
   if l:current_buffer == s:buffer_nr 
+    echo "pewppew"
+    echo "pewppew"
     return
   endif
   let s:preview = 1
@@ -133,19 +136,20 @@ function! notarrow#next() abort
   else
     let l:order = notarrow#order#listed(l:current_buffer, l:current_window)
   endif
-  echom string(l:order)
   if len(l:order) > 1
     let l:buffer = l:order[1]
     call notarrow#open_buffer_window()
     call notarrow#setup() 
     call notarrow#populate(l:buffer, l:current_window)
     call notarrow#autocmds()
-    augroup notarrow_buffer
-      exe 'autocmd CursorMoved,InsertEnter,TextChanged,CursorHold <buffer=' . l:buffer . '> call notarrow#close()'
-    augroup END
     call notarrow#keybinds(l:buffer, l:current_window)
     sil exe l:current_window . 'winc w'
     sil exe 'buf' l:buffer
+    call notarrow#order#rotate(l:current_buffer, l:current_window)
+    "augroup notarrow_buffer
+    "  autocmd!
+    "  autocmd CursorMoved,InsertEnter,TextChanged,CursorHold <buffer> call notarrow#close()
+    "augroup END
   endif
   let s:preview = 0
 endfunction
@@ -153,12 +157,13 @@ endfunction
 function! notarrow#buffer_window_enter() abort
   let l:window = winnr()
   let l:buffer = winbufnr(l:window)
+  if l:buffer == s:buffer_nr
+    return
+  endif
   if buflisted(l:buffer)
     call setbufvar(l:buffer, 'notarrow_relevant', 1)
     if !s:preview
       call notarrow#order#add(l:buffer, l:window)
-    else
-      call notarrow#order#rotate(l:buffer, l:window)
     endif
   endif
 endfunction
@@ -197,8 +202,8 @@ function! notarrow#populate(b, w) abort
   if bufnr('%') != s:buffer_nr
     throw 'trying to populate wrong buffer!'
   endif
-  set ma
-  norm! gg"_dG
+  setl ma
+  sil! norm! gg"_dG
   if s:mode == '*'
     let b:buffers = notarrow#order#relevant(a:b, a:w)
   else
@@ -209,7 +214,7 @@ function! notarrow#populate(b, w) abort
   endif
   let l:buffer_paths = map(copy(b:buffers), 'notarrow#format_buffer_path(v:val, a:b)')
   call append(0, l:buffer_paths)
-  norm! G"_dd
-  exe 'norm! G' . (index(b:buffers, a:b) - 1)
-  set noma
+  sil! norm! G"_dd
+  sil! exe 'norm! G' . (index(b:buffers, a:b) - 1)
+  setl noma
 endfunction
